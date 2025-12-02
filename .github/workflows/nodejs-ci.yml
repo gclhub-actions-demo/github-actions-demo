@@ -109,7 +109,7 @@ jobs:
 
   security-scan:
     name: Security Scan
-    uses: mastercard-actions-demo/github-actions-demo/.github/workflows/reusable/security-scan.yml@main
+    uses: mastercard-actions-demo/github-actions-demo/.github/workflows/reusable-security-scan.yml@main
     with:
       language: 'javascript'
       scan-type: 'all'

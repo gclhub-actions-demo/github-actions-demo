@@ -20,7 +20,7 @@ permissions:
 jobs:
   validate-release:
     name: Validate Release
-    uses: mastercard-actions-demo/github-actions-demo/.github/workflows/reusable/release-validation.yml@main
+    uses: mastercard-actions-demo/github-actions-demo/.github/workflows/reusable-release-validation.yml@main
     with:
       version: ${{ github.event.inputs.version || github.ref_name }}
       environment: 'staging'
