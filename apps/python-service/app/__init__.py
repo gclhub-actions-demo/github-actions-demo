@@ -36,9 +36,9 @@ def get_product(product_id):
         {'id': 2, 'name': 'Mouse', 'price': 29.99, 'stock': 200},
         {'id': 3, 'name': 'Keyboard', 'price': 79.99, 'stock': 150},
     ]
-    
+
     product = next((p for p in products if p['id'] == product_id), None)
-    
+
     if product:
         return jsonify(product), 200
     return jsonify({'error': 'Product not found'}), 404
@@ -48,17 +48,17 @@ def get_product(product_id):
 def create_product():
     """Create a new product."""
     data = request.get_json()
-    
+
     if not data or 'name' not in data or 'price' not in data:
         return jsonify({'error': 'Name and price are required'}), 400
-    
+
     new_product = {
         'id': int(datetime.utcnow().timestamp()),
         'name': data['name'],
         'price': data['price'],
         'stock': data.get('stock', 0)
     }
-    
+
     return jsonify(new_product), 201
 
 
