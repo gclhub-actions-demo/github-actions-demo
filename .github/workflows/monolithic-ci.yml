@@ -38,37 +38,8 @@ jobs:
       - name: Set up matrix
         id: set-matrix
         run: |
-          # Define matrix configuration for all stacks
-          MATRIX='{
-            "include": [
-              {
-                "stack": "node",
-                "version": "20",
-                "app-path": "apps/nodejs-api",
-                "app-name": "nodejs-api"
-              },
-              {
-                "stack": "python",
-                "version": "3.11",
-                "app-path": "apps/python-service",
-                "app-name": "python-service"
-              },
-              {
-                "stack": "java",
-                "version": "17",
-                "app-path": "apps/java-app",
-                "app-name": "java-app"
-              },
-              {
-                "stack": "dotnet",
-                "version": "8.0",
-                "app-path": "apps/dotnet-api",
-                "app-name": "dotnet-api"
-              }
-            ]
-          }'
-          
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          # Define matrix configuration for all stacks (must be single-line JSON)
+          echo 'matrix={"include":[{"stack":"node","version":"20","app-path":"apps/nodejs-api","app-name":"nodejs-api"},{"stack":"python","version":"3.11","app-path":"apps/python-service","app-name":"python-service"},{"stack":"java","version":"17","app-path":"apps/java-app","app-name":"java-app"},{"stack":"dotnet","version":"8.0","app-path":"apps/dotnet-api","app-name":"dotnet-api"}]}' >> $GITHUB_OUTPUT
 
   build-and-test:
     name: ${{ matrix.app-name }} (${{ matrix.stack }})
