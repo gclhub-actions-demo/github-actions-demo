@@ -1,0 +1,119 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/nodejs-api/**'
+      - '.github/workflows/nodejs-ci.yml'
+      - '.github/actions/**'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/nodejs-api/**'
+      - '.github/workflows/nodejs-ci.yml'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  WORKING_DIR: 'apps/nodejs-api'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'node'
+          stack-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run lint
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'node'
+          stack-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: Build application
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: ./.github/actions/package-artifacts
+        with:
+          artifact-name: nodejs-build
+          working-directory: ${{ env.WORKING_DIR }}
+          retention-days: 7
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'node'
+          stack-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: Run tests with coverage
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm test -- --coverage
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nodejs-coverage
+          path: ${{ env.WORKING_DIR }}/coverage
+          retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    uses: ./.github/workflows/reusable/security-scan.yml
+    with:
+      language: 'javascript'
+      scan-type: 'all'
+      working-directory: 'apps/nodejs-api'
+    permissions:
+      contents: read
+      security-events: write

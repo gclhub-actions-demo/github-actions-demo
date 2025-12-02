@@ -1,0 +1,123 @@
+name: .NET CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/dotnet-api/**'
+      - '.github/workflows/dotnet-ci.yml'
+      - '.github/actions/**'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/dotnet-api/**'
+      - '.github/workflows/dotnet-ci.yml'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0'
+  WORKING_DIR: 'apps/dotnet-api'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'dotnet'
+          stack-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet restore
+
+      - name: Run dotnet format
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'dotnet'
+          stack-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet restore
+
+      - name: Build application
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish application
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet publish --configuration Release --no-build --output ./publish
+
+      - name: Upload build artifacts
+        uses: ./.github/actions/package-artifacts
+        with:
+          artifact-name: dotnet-build
+          working-directory: ${{ env.WORKING_DIR }}
+          retention-days: 7
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'dotnet'
+          stack-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet restore
+
+      - name: Run tests with coverage
+        working-directory: ${{ env.WORKING_DIR }}
+        run: dotnet test --configuration Release --logger "trx;LogFileName=test-results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dotnet-test-results
+          path: ${{ env.WORKING_DIR }}/**/test-results.trx
+          retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    uses: ./.github/workflows/reusable/security-scan.yml
+    with:
+      language: 'csharp'
+      scan-type: 'all'
+      working-directory: 'apps/dotnet-api'
+    permissions:
+      contents: read
+      security-events: write

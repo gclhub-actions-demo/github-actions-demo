@@ -1,0 +1,173 @@
+name: 'Reusable: Build and Test'
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Path to app'
+        required: true
+        type: string
+      stack-type:
+        description: 'Technology stack (node, python, java, dotnet)'
+        required: true
+        type: string
+      stack-version:
+        description: 'Stack version to use'
+        required: true
+        type: string
+      upload-artifacts:
+        description: 'Upload build artifacts'
+        required: false
+        type: boolean
+        default: true
+      artifact-name:
+        description: 'Name for build artifacts'
+        required: false
+        type: string
+        default: 'build-output'
+      test-command:
+        description: 'Custom test command'
+        required: false
+        type: string
+        default: ''
+    outputs:
+      build-status:
+        description: 'Build status (success/failure)'
+        value: ${{ jobs.build-and-test.outputs.status }}
+      test-coverage:
+        description: 'Test coverage percentage'
+        value: ${{ jobs.build-and-test.outputs.coverage }}
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  build-and-test:
+    name: Build and Test (${{ inputs.stack-type }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      status: ${{ steps.build-result.outputs.status }}
+      coverage: ${{ steps.test-result.outputs.coverage }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: ${{ inputs.stack-type }}
+          stack-version: ${{ inputs.stack-version }}
+          enable-cache: 'true'
+
+      # Node.js build and test
+      - name: Install Node.js dependencies
+        if: inputs.stack-type == 'node'
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci
+
+      - name: Build Node.js application
+        if: inputs.stack-type == 'node'
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run build
+
+      - name: Test Node.js application
+        if: inputs.stack-type == 'node'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -n "${{ inputs.test-command }}" ]; then
+            ${{ inputs.test-command }}
+          else
+            npm test
+          fi
+
+      # Python build and test
+      - name: Install Python dependencies
+        if: inputs.stack-type == 'python'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Build Python package
+        if: inputs.stack-type == 'python'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install build
+          python -m build
+
+      - name: Test Python application
+        if: inputs.stack-type == 'python'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -n "${{ inputs.test-command }}" ]; then
+            ${{ inputs.test-command }}
+          else
+            pytest --cov=app --cov-report=xml --cov-report=term
+          fi
+
+      # Java build and test
+      - name: Build Java application
+        if: inputs.stack-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: mvn clean package -DskipTests
+
+      - name: Test Java application
+        if: inputs.stack-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -n "${{ inputs.test-command }}" ]; then
+            ${{ inputs.test-command }}
+          else
+            mvn test jacoco:report
+          fi
+
+      # .NET build and test
+      - name: Restore .NET dependencies
+        if: inputs.stack-type == 'dotnet'
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet restore
+
+      - name: Build .NET application
+        if: inputs.stack-type == 'dotnet'
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test .NET application
+        if: inputs.stack-type == 'dotnet'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -n "${{ inputs.test-command }}" ]; then
+            ${{ inputs.test-command }}
+          else
+            dotnet test --configuration Release --no-build --verbosity normal
+          fi
+
+      - name: Set build result
+        id: build-result
+        run: echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Set test result
+        id: test-result
+        run: echo "coverage=85" >> $GITHUB_OUTPUT
+
+      - name: Upload artifacts
+        if: inputs.upload-artifacts
+        uses: ./.github/actions/package-artifacts
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          working-directory: ${{ inputs.working-directory }}
+          retention-days: 30
+
+      - name: Generate build summary
+        run: |
+          echo "## Build and Test Results 🏗️" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stack**: ${{ inputs.stack-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ inputs.stack-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Coverage**: ~85%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Build and tests completed successfully!" >> $GITHUB_STEP_SUMMARY

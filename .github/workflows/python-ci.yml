@@ -1,0 +1,133 @@
+name: Python CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/python-service/**'
+      - '.github/workflows/python-ci.yml'
+      - '.github/actions/**'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/python-service/**'
+      - '.github/workflows/python-ci.yml'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  WORKING_DIR: 'apps/python-service'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'python'
+          stack-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run flake8
+        working-directory: ${{ env.WORKING_DIR }}
+        run: flake8 app tests
+
+      - name: Run pylint
+        working-directory: ${{ env.WORKING_DIR }}
+        run: pylint app tests --exit-zero
+
+      - name: Run black (check)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: black --check app tests
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'python'
+          stack-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          pip install -r requirements.txt
+          pip install build
+
+      - name: Build package
+        working-directory: ${{ env.WORKING_DIR }}
+        run: python -m build
+
+      - name: Upload build artifacts
+        uses: ./.github/actions/package-artifacts
+        with:
+          artifact-name: python-build
+          working-directory: ${{ env.WORKING_DIR }}
+          retention-days: 7
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: 'python'
+          stack-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        working-directory: ${{ env.WORKING_DIR }}
+        run: pytest --cov=app --cov-report=html --cov-report=xml --cov-report=term
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-coverage
+          path: ${{ env.WORKING_DIR }}/htmlcov
+          retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    uses: ./.github/workflows/reusable/security-scan.yml
+    with:
+      language: 'python'
+      scan-type: 'all'
+      working-directory: 'apps/python-service'
+    permissions:
+      contents: read
+      security-events: write

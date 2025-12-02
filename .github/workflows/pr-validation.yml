@@ -1,0 +1,236 @@
+name: PR Validation
+
+# Comprehensive pull request validation workflow
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  issues: write
+
+jobs:
+  pr-info:
+    name: PR Information
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: PR Details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            console.log('PR Number:', pr.number);
+            console.log('Title:', pr.title);
+            console.log('Author:', pr.user.login);
+            console.log('Base:', pr.base.ref);
+            console.log('Head:', pr.head.ref);
+            console.log('Files changed:', pr.changed_files);
+            console.log('Additions:', pr.additions);
+            console.log('Deletions:', pr.deletions);
+
+  validate-title:
+    name: Validate PR Title
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check PR title format
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            
+            // Check for conventional commit format
+            const pattern = /^(feat|fix|docs|style|refactor|perf|test|chore|ci)(\(.+\))?: .+/;
+            
+            if (!pattern.test(title)) {
+              core.setFailed(
+                'PR title does not follow conventional commit format.\n' +
+                'Expected: <type>(optional scope): <description>\n' +
+                'Types: feat, fix, docs, style, refactor, perf, test, chore, ci\n' +
+                'Example: feat(api): add new user endpoint'
+              );
+            } else {
+              console.log('✅ PR title follows conventional commit format');
+            }
+
+  validate-description:
+    name: Validate PR Description
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check PR description
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            
+            if (body.length < 50) {
+              core.warning('PR description is very short. Please provide more context.');
+            }
+            
+            // Check for common sections
+            const hasSummary = body.toLowerCase().includes('summary') || body.toLowerCase().includes('description');
+            const hasChanges = body.toLowerCase().includes('changes') || body.toLowerCase().includes('what');
+            const hasTesting = body.toLowerCase().includes('test') || body.toLowerCase().includes('verify');
+            
+            console.log('Description checks:');
+            console.log('- Has summary:', hasSummary);
+            console.log('- Describes changes:', hasChanges);
+            console.log('- Mentions testing:', hasTesting);
+
+  size-analysis:
+    name: PR Size Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Analyze PR size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const additions = pr.additions;
+            const deletions = pr.deletions;
+            const changedFiles = pr.changed_files;
+            const totalChanges = additions + deletions;
+            
+            let size = 'XS';
+            let color = 'green';
+            
+            if (totalChanges > 1000) {
+              size = 'XL';
+              color = 'red';
+            } else if (totalChanges > 500) {
+              size = 'L';
+              color = 'orange';
+            } else if (totalChanges > 200) {
+              size = 'M';
+              color = 'yellow';
+            } else if (totalChanges > 50) {
+              size = 'S';
+              color = 'lightgreen';
+            }
+            
+            console.log('PR Size:', size);
+            console.log('Total changes:', totalChanges);
+            console.log('Files changed:', changedFiles);
+            console.log('Additions:', additions);
+            console.log('Deletions:', deletions);
+            
+            // Add label based on size
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: [`size/${size.toLowerCase()}`]
+              });
+            } catch (error) {
+              console.log('Could not add label:', error.message);
+            }
+
+  auto-label:
+    name: Auto Label
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Label based on changed files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            
+            // Get changed files
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+            
+            const labels = new Set();
+            
+            files.forEach(file => {
+              const path = file.filename;
+              
+              if (path.startsWith('apps/nodejs-api/')) labels.add('nodejs');
+              if (path.startsWith('apps/python-service/')) labels.add('python');
+              if (path.startsWith('apps/java-app/')) labels.add('java');
+              if (path.startsWith('apps/dotnet-api/')) labels.add('dotnet');
+              if (path.startsWith('.github/workflows/')) labels.add('ci/cd');
+              if (path.startsWith('.github/actions/')) labels.add('actions');
+              if (path.startsWith('docs/')) labels.add('documentation');
+              if (path.endsWith('.test.ts') || path.endsWith('.test.js') || 
+                  path.endsWith('_test.py') || path.endsWith('Test.java') || 
+                  path.endsWith('Tests.cs')) {
+                labels.add('tests');
+              }
+            });
+            
+            if (labels.size > 0) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  labels: Array.from(labels)
+                });
+                console.log('Added labels:', Array.from(labels).join(', '));
+              } catch (error) {
+                console.log('Could not add labels:', error.message);
+              }
+            }
+
+  comment-summary:
+    name: Comment Summary
+    runs-on: ubuntu-latest
+    needs: [validate-title, size-analysis, auto-label]
+    if: always()
+    
+    steps:
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            
+            const comment = `## PR Validation Summary 🔍
+            
+            Thank you for your contribution! Here's a summary of the automated checks:
+            
+            - ✅ PR title validated
+            - ✅ Size analysis completed
+            - ✅ Auto-labeling completed
+            
+            **PR Stats:**
+            - Files changed: ${pr.changed_files}
+            - Lines added: +${pr.additions}
+            - Lines deleted: -${pr.deletions}
+            
+            Please ensure:
+            - [ ] All CI checks pass
+            - [ ] Tests are included for new features
+            - [ ] Documentation is updated if needed
+            - [ ] Code follows project conventions
+            
+            _This comment was automatically generated by the PR validation workflow._
+            `;
+            
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: comment
+              });
+            } catch (error) {
+              console.log('Could not post comment:', error.message);
+            }

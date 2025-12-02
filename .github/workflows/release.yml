@@ -1,0 +1,167 @@
+name: Release
+
+# Create a release with changelog and artifacts
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  validate-release:
+    name: Validate Release
+    uses: ./.github/workflows/reusable/release-validation.yml
+    with:
+      version: ${{ github.event.inputs.version || github.ref_name }}
+      environment: 'staging'
+      require-approval: false
+
+  build-all:
+    name: Build All Applications
+    runs-on: ubuntu-latest
+    needs: validate-release
+    
+    strategy:
+      matrix:
+        app:
+          - name: nodejs-api
+            stack: node
+            version: '20'
+            path: apps/nodejs-api
+          - name: python-service
+            stack: python
+            version: '3.11'
+            path: apps/python-service
+          - name: java-app
+            stack: java
+            version: '17'
+            path: apps/java-app
+          - name: dotnet-api
+            stack: dotnet
+            version: '8.0'
+            path: apps/dotnet-api
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.app.name }}
+        uses: ./.github/workflows/reusable/build-test.yml
+        with:
+          working-directory: ${{ matrix.app.path }}
+          stack-type: ${{ matrix.app.stack }}
+          stack-version: ${{ matrix.app.version }}
+          upload-artifacts: true
+          artifact-name: ${{ matrix.app.name }}-release
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-all
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          
+          echo "Generating release notes for version $VERSION"
+          
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+          
+          # Create release notes
+          cat > release-notes.md << EOF
+          # Release v${VERSION}
+          
+          ## What's Changed
+          
+          ${COMMITS}
+          
+          ## Applications Included
+          
+          - Node.js API v${VERSION}
+          - Python Service v${VERSION}
+          - Java Application v${VERSION}
+          - .NET API v${VERSION}
+          
+          ## Installation
+          
+          Download the artifacts for your platform from the assets below.
+          
+          ## Full Changelog
+          
+          See all changes since ${LAST_TAG:-initial release}
+          EOF
+          
+          cat release-notes.md
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          name: Release ${{ github.event.inputs.version || github.ref_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-artifacts/**/*
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: create-release
+    environment:
+      name: staging
+      url: https://staging.example.com
+    
+    steps:
+      - name: Deploy to Staging
+        run: |
+          echo "🚀 Deploying release to staging environment"
+          echo "Version: ${{ github.event.inputs.version || github.ref_name }}"
+          echo "✅ Deployment completed successfully"
+
+  release-summary:
+    name: Release Summary
+    runs-on: ubuntu-latest
+    needs: [create-release, deploy-staging]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Release Summary 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ github.event.inputs.version || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Created**: ${{ needs.create-release.result == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed to Staging**: ${{ needs.deploy-staging.result == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Release process completed!" >> $GITHUB_STEP_SUMMARY

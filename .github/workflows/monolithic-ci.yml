@@ -1,0 +1,210 @@
+name: Monolithic Multi-Stack CI
+
+# This workflow demonstrates a monolithic approach where a single workflow
+# handles all technology stacks using matrix strategy
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/**'
+      - '.github/workflows/monolithic-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/**'
+  workflow_dispatch:
+
+env:
+  BUILD_TIMEOUT_MINUTES: 30
+  ARTIFACT_RETENTION_DAYS: 30
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  setup:
+    name: Setup Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up matrix
+        id: set-matrix
+        run: |
+          # Define matrix configuration for all stacks
+          MATRIX='{
+            "include": [
+              {
+                "stack": "node",
+                "version": "20",
+                "app-path": "apps/nodejs-api",
+                "app-name": "nodejs-api"
+              },
+              {
+                "stack": "python",
+                "version": "3.11",
+                "app-path": "apps/python-service",
+                "app-name": "python-service"
+              },
+              {
+                "stack": "java",
+                "version": "17",
+                "app-path": "apps/java-app",
+                "app-name": "java-app"
+              },
+              {
+                "stack": "dotnet",
+                "version": "8.0",
+                "app-path": "apps/dotnet-api",
+                "app-name": "dotnet-api"
+              }
+            ]
+          }'
+          
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+  build-and-test:
+    name: ${{ matrix.app-name }} (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    needs: setup
+    timeout-minutes: 30
+    
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+        with:
+          stack-type: ${{ matrix.stack }}
+          stack-version: ${{ matrix.version }}
+          enable-cache: 'true'
+          cache-key-prefix: monolithic-${{ matrix.app-name }}
+
+      # Node.js specific steps
+      - name: Install Node.js dependencies
+        if: matrix.stack == 'node'
+        working-directory: ${{ matrix.app-path }}
+        run: npm ci
+
+      - name: Lint Node.js code
+        if: matrix.stack == 'node'
+        working-directory: ${{ matrix.app-path }}
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build Node.js application
+        if: matrix.stack == 'node'
+        working-directory: ${{ matrix.app-path }}
+        run: npm run build
+
+      - name: Test Node.js application
+        if: matrix.stack == 'node'
+        working-directory: ${{ matrix.app-path }}
+        run: npm test
+
+      # Python specific steps
+      - name: Install Python dependencies
+        if: matrix.stack == 'python'
+        working-directory: ${{ matrix.app-path }}
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint Python code
+        if: matrix.stack == 'python'
+        working-directory: ${{ matrix.app-path }}
+        run: |
+          flake8 app tests || true
+          pylint app tests --exit-zero || true
+        continue-on-error: true
+
+      - name: Build Python package
+        if: matrix.stack == 'python'
+        working-directory: ${{ matrix.app-path }}
+        run: |
+          pip install build
+          python -m build
+
+      - name: Test Python application
+        if: matrix.stack == 'python'
+        working-directory: ${{ matrix.app-path }}
+        run: pytest --cov=app --cov-report=xml
+
+      # Java specific steps
+      - name: Lint Java code
+        if: matrix.stack == 'java'
+        working-directory: ${{ matrix.app-path }}
+        run: mvn checkstyle:check
+        continue-on-error: true
+
+      - name: Build Java application
+        if: matrix.stack == 'java'
+        working-directory: ${{ matrix.app-path }}
+        run: mvn clean package -DskipTests
+
+      - name: Test Java application
+        if: matrix.stack == 'java'
+        working-directory: ${{ matrix.app-path }}
+        run: mvn test jacoco:report
+
+      # .NET specific steps
+      - name: Restore .NET dependencies
+        if: matrix.stack == 'dotnet'
+        working-directory: ${{ matrix.app-path }}
+        run: dotnet restore
+
+      - name: Lint .NET code
+        if: matrix.stack == 'dotnet'
+        working-directory: ${{ matrix.app-path }}
+        run: dotnet format --verify-no-changes
+        continue-on-error: true
+
+      - name: Build .NET application
+        if: matrix.stack == 'dotnet'
+        working-directory: ${{ matrix.app-path }}
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test .NET application
+        if: matrix.stack == 'dotnet'
+        working-directory: ${{ matrix.app-path }}
+        run: dotnet test --configuration Release --no-build
+
+      # Common steps for all stacks
+      - name: Upload build artifacts
+        uses: ./.github/actions/package-artifacts
+        with:
+          artifact-name: ${{ matrix.app-name }}-build
+          working-directory: ${{ matrix.app-path }}
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Multi-Stack Build Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All technology stacks processed:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Node.js/TypeScript API" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Python Flask Service" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Java Spring Boot App" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ .NET Core API" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Result**: ${{ needs.build-and-test.result }}" >> $GITHUB_STEP_SUMMARY

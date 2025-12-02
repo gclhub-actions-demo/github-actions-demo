@@ -1,0 +1,124 @@
+name: 'Package and Publish Artifacts'
+description: 'Standardize artifact creation and upload'
+author: 'Demo'
+
+inputs:
+  artifact-name:
+    description: 'Name for artifact'
+    required: true
+  working-directory:
+    description: 'Build output location'
+    required: true
+  retention-days:
+    description: 'Artifact retention period'
+    required: false
+    default: '30'
+  include-patterns:
+    description: 'Files to include (glob patterns, comma-separated)'
+    required: false
+    default: '**/*'
+  exclude-patterns:
+    description: 'Files to exclude (glob patterns, comma-separated)'
+    required: false
+    default: ''
+
+outputs:
+  artifact-id:
+    description: 'Uploaded artifact ID'
+    value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-url:
+    description: 'Artifact download URL'
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect build outputs
+      id: detect-outputs
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "Detecting build outputs in: ${{ inputs.working-directory }}"
+        
+        # Check for common build output directories
+        if [ -d "dist" ]; then
+          echo "Found: dist/"
+          echo "output-dir=dist" >> $GITHUB_OUTPUT
+        elif [ -d "build" ]; then
+          echo "Found: build/"
+          echo "output-dir=build" >> $GITHUB_OUTPUT
+        elif [ -d "target" ]; then
+          echo "Found: target/"
+          echo "output-dir=target" >> $GITHUB_OUTPUT
+        elif [ -d "bin" ]; then
+          echo "Found: bin/"
+          echo "output-dir=bin" >> $GITHUB_OUTPUT
+        else
+          echo "Using working directory as output"
+          echo "output-dir=." >> $GITHUB_OUTPUT
+        fi
+
+    - name: Generate artifact manifest
+      id: manifest
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "Generating artifact manifest..."
+        
+        MANIFEST_FILE="artifact-manifest.json"
+        
+        cat > $MANIFEST_FILE << EOF
+        {
+          "artifact_name": "${{ inputs.artifact-name }}",
+          "generated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "repository": "${{ github.repository }}",
+          "commit_sha": "${{ github.sha }}",
+          "ref": "${{ github.ref }}",
+          "run_id": "${{ github.run_id }}",
+          "run_number": "${{ github.run_number }}",
+          "retention_days": ${{ inputs.retention-days }}
+        }
+        EOF
+        
+        echo "Manifest created:"
+        cat $MANIFEST_FILE
+
+    - name: Generate checksums
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "Generating SHA256 checksums..."
+        
+        OUTPUT_DIR="${{ steps.detect-outputs.outputs.output-dir }}"
+        
+        if [ -d "$OUTPUT_DIR" ]; then
+          find "$OUTPUT_DIR" -type f -not -name "*.sha256" -exec sha256sum {} \; > checksums.txt || true
+          echo "Checksums generated:"
+          head -n 5 checksums.txt || true
+          [ $(wc -l < checksums.txt) -gt 5 ] && echo "... and more" || true
+        else
+          echo "Output directory not found, skipping checksums"
+        fi
+
+    - name: Upload artifact
+      id: upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ inputs.working-directory }}/${{ steps.detect-outputs.outputs.output-dir }}
+          ${{ inputs.working-directory }}/artifact-manifest.json
+          ${{ inputs.working-directory }}/checksums.txt
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: warn
+
+    - name: Generate artifact summary
+      shell: bash
+      run: |
+        echo "## Artifact Published" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Name**: ${{ inputs.artifact-name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Retention**: ${{ inputs.retention-days }} days" >> $GITHUB_STEP_SUMMARY
+        echo "- **Run**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Artifact uploaded successfully! ✅" >> $GITHUB_STEP_SUMMARY

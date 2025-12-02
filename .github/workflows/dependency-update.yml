@@ -1,0 +1,131 @@
+name: Dependency Update
+
+# Automated dependency update checks
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-nodejs-deps:
+    name: Check Node.js Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check for outdated packages
+        working-directory: apps/nodejs-api
+        run: |
+          npm outdated || true
+          
+          echo "## Node.js Dependency Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          npm outdated || echo "All packages are up to date!" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  check-python-deps:
+    name: Check Python Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check for outdated packages
+        working-directory: apps/python-service
+        run: |
+          pip install -r requirements.txt
+          pip list --outdated || true
+          
+          echo "## Python Dependency Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          pip list --outdated || echo "All packages are up to date!" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  check-java-deps:
+    name: Check Java Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Check for outdated dependencies
+        working-directory: apps/java-app
+        run: |
+          mvn versions:display-dependency-updates || true
+          
+          echo "## Java Dependency Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check Maven output for outdated dependencies" >> $GITHUB_STEP_SUMMARY
+
+  check-dotnet-deps:
+    name: Check .NET Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Check for outdated packages
+        working-directory: apps/dotnet-api
+        run: |
+          dotnet list package --outdated || true
+          
+          echo "## .NET Dependency Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          dotnet list package --outdated || echo "All packages are up to date!" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  summary:
+    name: Dependency Check Summary
+    runs-on: ubuntu-latest
+    needs: [check-nodejs-deps, check-python-deps, check-java-deps, check-dotnet-deps]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Dependency Update Check Summary 📦" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Weekly dependency check completed for all applications." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Checks completed:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Node.js dependencies: ${{ needs.check-nodejs-deps.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Python dependencies: ${{ needs.check-python-deps.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Java dependencies: ${{ needs.check-java-deps.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- .NET dependencies: ${{ needs.check-dotnet-deps.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Review the individual job outputs for details on outdated packages." >> $GITHUB_STEP_SUMMARY
