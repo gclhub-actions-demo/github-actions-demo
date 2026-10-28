@@ -451,7 +451,7 @@ repository and is excluded. YAML event filters do not scope ruleset workflows.
 
 Review and merge the necessary implementation PRs before separately approving
 Evaluate-mode deployment, then Active enforcement. Select an approved immutable
-central revision and actual central owning team. Organization settings require
+central revision; the initial central CODEOWNER is `@gclhub`. Organization settings require
 appropriately authorized administrator access; do not assume creating the PRs
 has activated enforcement.
 

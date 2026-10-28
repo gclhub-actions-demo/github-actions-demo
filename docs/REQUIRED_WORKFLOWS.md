@@ -22,8 +22,9 @@ enforcement is enabled.
 | `.github` | Starter workflows and organization metadata; not an application |
 
 The central repository must be public to serve these public application repositories.
-Only the central team should have write access. App repository administrators must
-not receive write access to central policy merely because they administer an app.
+The initial central CODEOWNER is `@gclhub`. Only authorized central maintainers should
+have write access. App repository administrators must not receive write access to
+central policy merely because they administer an app.
 
 ## What is required
 
@@ -126,7 +127,7 @@ are honest; code review remains necessary.
 
 1. Review the central framework PR and application integration PRs. Leave them unmerged
    until the designated human reviewer is ready.
-2. Select an approved immutable central commit and the actual central owning team.
+2. Select an approved immutable central commit; the initial central owner is `@gclhub`.
    Protect central `main` with required review; CODEOWNERS alone is not protection.
 3. Have an appropriately authorized administrator inspect existing organization rules
    and Actions policies, then review the proposed settings from the central repository.
