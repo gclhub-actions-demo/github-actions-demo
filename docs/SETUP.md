@@ -439,14 +439,21 @@ Any branch         main/develop      main only
 
 #### Required Workflows (Organization Rulesets)
 
-See [REQUIRED_WORKFLOWS.md](REQUIRED_WORKFLOWS.md) for detailed instructions.
+See [REQUIRED_WORKFLOWS.md](REQUIRED_WORKFLOWS.md) for the application manifest,
+extension contract, and staged rollout instructions. The central source is
+[`gclhub-actions-demo/required-workflows`](https://github.com/gclhub-actions-demo/required-workflows),
+not the local demonstration workflows.
 
-**Quick Setup**:
-1. Go to **Organization** → **Settings** → **Repository rulesets**
-2. Click **New ruleset** → **New repository ruleset**
-3. Configure required workflows:
-   - Add workflow: `.github/workflows/security-scan.yml`
-   - Add workflow: `.github/workflows/pr-validation.yml`
+The proposed organization branch ruleset targets only the three application
+repositories and `refs/heads/main`, requires the central workflow, and has no bypass
+actors, including repository administrators. `.github` remains a metadata/starter
+repository and is excluded. YAML event filters do not scope ruleset workflows.
+
+Review and merge the necessary implementation PRs before separately approving
+Evaluate-mode deployment, then Active enforcement. Select an approved immutable
+central revision; the initial central CODEOWNER is `@gclhub`. Organization settings require
+appropriately authorized administrator access; do not assume creating the PRs
+has activated enforcement.
 
 #### Marketplace Action Restrictions
 

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "projects": [
+    {"id": "java", "path": "apps/java-app"},
+    {"id": "node", "path": "apps/nodejs-api"},
+    {"id": "python", "path": "apps/python-service"},
+    {"id": "dotnet", "path": "apps/dotnet-api"}
+  ],
+  "extensions": {
+    "preflight": ".github/ci/preflight.sh",
+    "postflight": ".github/ci/postflight.sh"
+  }
+}

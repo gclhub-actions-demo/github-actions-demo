@@ -15,6 +15,22 @@ This repository demonstrates:
 
 > **Note**: This demo focuses on **CI (Continuous Integration)** including testing and artifact creation. CD (Continuous Deployment) is not covered.
 
+## Central PR governance
+
+The [central required-workflows repository](https://github.com/gclhub-actions-demo/required-workflows)
+provides the proposed mandatory toolchain checks for PRs targeting `main`.
+Organization rulesets, not editable local workflows or starter templates, provide
+enforcement. All four application projects run for each applicable PR; developers
+can add isolated preflight/postflight scripts through [`.github/app-ci.json`](.github/app-ci.json)
+without disabling required stages. Application developers and repository administrators
+receive no ruleset bypass.
+
+**Staged delivery:** implementation PRs do not activate organization settings.
+Central protection and ruleset deployment require separate administrator approval.
+See [the governance contract and rollout guide](docs/REQUIRED_WORKFLOWS.md).
+The organization's [`.github` repository](https://github.com/gclhub-actions-demo/.github)
+continues to provide optional starter workflows and metadata and is not an application.
+
 ## 📋 Table of Contents
 
 - [Repository Structure](#repository-structure)
